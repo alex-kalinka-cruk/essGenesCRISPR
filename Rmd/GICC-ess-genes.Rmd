@@ -1,0 +1,122 @@
+---
+title: "Reproducibility of essential gene normalized counts in CRISPR screens"
+author: "Alex Kalinka"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    code_folding: hide
+    depth: 3
+    highlight: tango
+    number_sections: true
+    theme: spacelab
+    toc: true
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+options(warn=-1)
+suppressMessages(library(knitr))
+suppressMessages(library(tidyr))
+suppressMessages(library(magrittr))
+suppressMessages(library(ggplot2))
+suppressMessages(library(dplyr))
+suppressMessages(library(GICC))
+
+data_root <- "~/data/az_cruk"
+
+```
+
+# HT29 (Iorio)
+
+## Data
+
+Approach:
+
+* Take pairs of control replicates vs plasmid pairs so power is similar to actual screens, but the design is balanced.
+
+```{r}
+# Make paired data.
+make_paired <- function(comm, data, cnums, genes){
+  data %<>% filter(gene %in% genes)
+  comm %<>% filter(gene %in% genes)
+  ret <- data.frame(id = c(rep("plasmid",2),rep("control",2)), t(cbind(comm[,3:4], data[,cnums])))
+  rownames(ret) <- NULL
+  return(ret)
+}
+
+load_normalised_counts <- function(path){
+  load(path)
+  return(normed)
+}
+
+build_gicc_df <- function(...){
+  data_list <- list(...)
+  ret <- NULL
+  for(i in 1:length(data_list)){
+    data <- data_list[[i]]
+    # 1. How many pairs of replicates can we make?
+    num_col <- length(sum(grepl("HT29",colnames(data))))
+    d <- 1:(max(c(num_col,8)))
+    pairs <- split(d, ceiling(seq_along(d)/2))
+    # 2. Loop over all non-overlapping pairs.
+    for(j in 1:length(pairs)){
+      pair <- pairs[[j]]
+      # 3. Loop over all essential gene groups.
+      for(k in 1:length(ess.genes)){
+        ess <- ess.genes[[k]]
+        td <- make_paired(common, data, pair, ess)
+        ret <- rbind(ret, data.frame(screen = paste(names(data_list)[i],".",paste(pair,collapse="."),sep=""),
+                                     genes = names(ess.genes)[k], GICC = GICC(td)$GICC$GICC.1))
+      }
+    }
+  }
+  return(ret)
+}
+
+# Use 'cleanr' normalized data.
+path_ht29 <- file.path(data_root,"ht29-francesco-iorio","01_normalised_and_FCs")
+
+# Assemble the sgRNAs, genes, and the two plasmid count replicates.
+c903 <- load_normalised_counts(file.path(path_ht29,"HT29_c903.tsv_normCounts.RData"))
+c904 <- load_normalised_counts(file.path(path_ht29,"HT29_c904.tsv_normCounts.RData"))
+c905 <- load_normalised_counts(file.path(path_ht29,"HT29_c905.tsv_normCounts.RData"))
+c906 <- load_normalised_counts(file.path(path_ht29,"HT29_c906.tsv_normCounts.RData"))
+c907 <- load_normalised_counts(file.path(path_ht29,"HT29_c907.tsv_normCounts.RData"))
+c908 <- load_normalised_counts(file.path(path_ht29,"HT29_c908.tsv_normCounts.RData"))
+
+sgrna_comm <- Reduce(intersect, list(c903$sgRNA, c904$sgRNA, c905$sgRNA, c906$sgRNA, c907$sgRNA, c908$sgRNA))
+
+c903 %<>% filter(sgRNA %in% sgrna_comm)
+c904 %<>% filter(sgRNA %in% sgrna_comm)
+c905 %<>% filter(sgRNA %in% sgrna_comm)
+c906 %<>% filter(sgRNA %in% sgrna_comm)
+c907 %<>% filter(sgRNA %in% sgrna_comm)
+c908 %<>% filter(sgRNA %in% sgrna_comm)
+
+common <- data.frame(c903[,1:3], c905$CRISPR_C6596666.sample)
+colnames(common)[3:4] <- c("plasmid.1","plasmid.2")
+
+c903.12.panc <- make_paired(common, c903, 4:5, ess.genes$pan_cancer_Sanger)
+c903.12.rp <- make_paired(common, c903, 4:5, ess.genes$ribosomal_proteins)
+c903.12.dr <- make_paired(common, c903, 4:5, ess.genes$DNA_replication)
+c903.12.py <- make_paired(common, c903, 4:5, ess.genes$RNA_polymerase)
+c903.12.pr <- make_paired(common, c903, 4:5, ess.genes$Proteasome)
+c903.12.sp <- make_paired(common, c903, 4:5, ess.genes$Spliceosome)
+c903.12.hs <- make_paired(common, c903, 4:5, ess.genes$Histones)
+c903.12.be <- make_paired(common, c903, 4:5, ess.genes$bagel_essential)
+c903.12.bn <- make_paired(common, c903, 4:5, ess.genes$bagel_nonessential)
+
+
+
+```
+
+## GICC
+
+```{r}
+
+
+```
+
+
+
+
