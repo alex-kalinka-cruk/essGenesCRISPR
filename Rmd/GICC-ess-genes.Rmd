@@ -23,6 +23,7 @@ suppressMessages(library(dplyr))
 suppressMessages(library(GICC))
 
 data_root <- "~/data/az_cruk"
+load("../data/ess.genes.rda")
 
 ```
 
@@ -39,7 +40,8 @@ Approach:
 make_paired <- function(comm, data, cnums, genes){
   data %<>% filter(gene %in% genes)
   comm %<>% filter(gene %in% genes)
-  ret <- data.frame(id = c(rep("plasmid",2),rep("control",2)), t(cbind(comm[,3:4], data[,cnums])))
+  ret <- data.frame(id = c(rep("plasmid",2),rep("control",2)), 
+                    t(cbind(comm[,3:4], data[,cnums])))
   rownames(ret) <- NULL
   return(ret)
 }
@@ -54,9 +56,11 @@ build_gicc_df <- function(...){
   ret <- NULL
   for(i in 1:length(data_list)){
     data <- data_list[[i]]
+    screen_name <- gsub("^HT29_(c90\\d).*$","\\1",colnames(data)[4])
     # 1. How many pairs of replicates can we make?
-    num_col <- length(sum(grepl("HT29",colnames(data))))
-    d <- 1:(max(c(num_col,8)))
+    num_col <- sum(grepl("HT29",colnames(data)))
+    if(num_col==3) num_col <- 2
+    d <- 1:(min(c(num_col,8))) + 3
     pairs <- split(d, ceiling(seq_along(d)/2))
     # 2. Loop over all non-overlapping pairs.
     for(j in 1:length(pairs)){
@@ -65,11 +69,17 @@ build_gicc_df <- function(...){
       for(k in 1:length(ess.genes)){
         ess <- ess.genes[[k]]
         td <- make_paired(common, data, pair, ess)
-        ret <- rbind(ret, data.frame(screen = paste(names(data_list)[i],".",paste(pair,collapse="."),sep=""),
-                                     genes = names(ess.genes)[k], GICC = GICC(td)$GICC$GICC.1))
+        ret <- rbind(ret, data.frame(screen = 
+                                  paste(screen_name,".",paste(pair-3,collapse="."),sep=""),
+                                  genes = names(ess.genes)[k], GICC = GICC(td)$GICC$GICC.1))
       }
     }
   }
+  ret %<>%
+    group_by(genes) %>%
+    mutate(mdn = median(GICC)) %>%
+    ungroup() %>%
+    mutate(genes = factor(genes, levels = unique(genes[rev(order(mdn))])))
   return(ret)
 }
 
@@ -96,27 +106,42 @@ c908 %<>% filter(sgRNA %in% sgrna_comm)
 common <- data.frame(c903[,1:3], c905$CRISPR_C6596666.sample)
 colnames(common)[3:4] <- c("plasmid.1","plasmid.2")
 
-c903.12.panc <- make_paired(common, c903, 4:5, ess.genes$pan_cancer_Sanger)
-c903.12.rp <- make_paired(common, c903, 4:5, ess.genes$ribosomal_proteins)
-c903.12.dr <- make_paired(common, c903, 4:5, ess.genes$DNA_replication)
-c903.12.py <- make_paired(common, c903, 4:5, ess.genes$RNA_polymerase)
-c903.12.pr <- make_paired(common, c903, 4:5, ess.genes$Proteasome)
-c903.12.sp <- make_paired(common, c903, 4:5, ess.genes$Spliceosome)
-c903.12.hs <- make_paired(common, c903, 4:5, ess.genes$Histones)
-c903.12.be <- make_paired(common, c903, 4:5, ess.genes$bagel_essential)
-c903.12.bn <- make_paired(common, c903, 4:5, ess.genes$bagel_nonessential)
-
-
-
 ```
 
 ## GICC
 
 ```{r}
+gicc.all <- build_gicc_df(c903, c904, c905, c906, c907, c908) %>%
+  group_by(genes) %>%
+  mutate(gicc.rank = rank(GICC)) %>%
+  ungroup
 
+ggplot(gicc.all, aes(genes,GICC,color=genes)) +
+  geom_point() +
+  geom_boxplot(fill=NA) +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
+  ggtitle("HT29 repeated screens: GICC by gene group")
+
+ggplot(gicc.all,aes(genes,rank,group=screen,color=screen)) +
+  geom_point() +
+  geom_line() +
+  theme(axis.text.x = element_text(angle = -30, hjust = 0))
+
+# Normalize by gene group and compare individual screens,
+gicc.norm <- gicc.all %>%
+  group_by(genes) %>%
+  mutate(gicc.scaled = scale(GICC)) %>%
+  ungroup %>%
+  group_by(screen) %>%
+  mutate(mdn.s = median(gicc.scaled)) %>%
+  ungroup %>%
+  mutate(screen = factor(screen, levels = unique(screen[rev(order(mdn.s))])))
+
+ggplot(gicc.norm, aes(screen,gicc.scaled, color=screen)) +
+  geom_point() +
+  geom_boxplot(fill=NA) +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank())
 
 ```
-
-
 
 
