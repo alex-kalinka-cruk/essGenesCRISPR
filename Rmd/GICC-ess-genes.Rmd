@@ -129,6 +129,7 @@ ggplot(gicc.all,aes(genes,rank,group=screen,color=screen)) +
 
 # Normalize by gene group and compare individual screens,
 gicc.norm <- gicc.all %>%
+  filter(genes != "Spliceosome" & genes != "Proteasome") %>%
   group_by(genes) %>%
   mutate(gicc.scaled = scale(GICC)) %>%
   ungroup %>%
