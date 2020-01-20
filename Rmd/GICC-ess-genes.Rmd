@@ -24,6 +24,7 @@ suppressMessages(library(GICC))
 
 data_root <- "~/data/az_cruk"
 load("../data/ess.genes.rda")
+load("~/git-projects/crispRutils/data/yusa.v1.crisprn.annot.rda")
 
 ```
 
@@ -184,6 +185,15 @@ ggplot(gicc.all.unpaired.raw, aes(gene_group,GICC,color=gene_group)) +
   geom_hline(yintercept = 0.6, linetype="dashed") +
   theme(axis.text.x = element_blank(), axis.ticks.x = element_blank()) +
   ggtitle("HT29 repeated screens: GICC by gene group - raw counts")
+
+```
+
+### Number of transcripts hit
+
+```{r}
+# Sample groups of genes that don't belong to essential gene groups:
+# Calculate GICC for sliding window of % of transcripts hit by the sgRNA (cuts occur 3bp upstream of PAM).
+
 
 ```
 
