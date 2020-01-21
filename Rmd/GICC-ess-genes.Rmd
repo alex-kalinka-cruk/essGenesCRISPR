@@ -14,6 +14,8 @@ output:
 ---
 
 ```{r setup, include=FALSE}
+set.seed(1)
+
 options(warn=-1)
 suppressMessages(library(knitr))
 suppressMessages(library(tidyr))
@@ -21,6 +23,10 @@ suppressMessages(library(magrittr))
 suppressMessages(library(ggplot2))
 suppressMessages(library(dplyr))
 suppressMessages(library(GICC))
+suppressMessages(library(zoo))
+
+select <- dplyr::select
+filter <- dplyr::filter
 
 data_root <- "~/data/az_cruk"
 load("../data/ess.genes.rda")
@@ -37,6 +43,11 @@ Approach:
 * Take pairs of control replicates vs plasmid pairs so power is similar to actual screens, but the design is balanced.
 
 ```{r}
+load_normalised_counts <- function(path){
+  load(path)
+  return(normed)
+}
+
 # Make paired data.
 make_paired <- function(comm, data, cnums, genes, incl_comm = TRUE){
   data %<>% filter(gene %in% genes)
@@ -51,11 +62,6 @@ make_paired <- function(comm, data, cnums, genes, incl_comm = TRUE){
   }
   rownames(ret) <- NULL
   return(ret)
-}
-
-load_normalised_counts <- function(path){
-  load(path)
-  return(normed)
 }
 
 build_gicc_df <- function(..., incl_comm = TRUE){
@@ -191,8 +197,73 @@ ggplot(gicc.all.unpaired.raw, aes(gene_group,GICC,color=gene_group)) +
 ### Number of transcripts hit
 
 ```{r}
-# Sample groups of genes that don't belong to essential gene groups:
+# Sample groups of genes stratified by fold change:
 # Calculate GICC for sliding window of % of transcripts hit by the sgRNA (cuts occur 3bp upstream of PAM).
+prep_data_logfc <- function(data){
+  data %<>%
+    mutate(logfc = log2(apply(data[,4:ncol(data)],1,median)/data[,3]),
+           num_transcripts_hit = yusa.v1.crisprn.annot$num_transcripts_hit[match(sgRNA,yusa.v1.crisprn.annot$CODE)],
+           num_transcripts_not_hit = yusa.v1.crisprn.annot$num_transcripts_not_hit[match(sgRNA,yusa.v1.crisprn.annot$CODE)],
+           percent_transcripts_not_hit = yusa.v1.crisprn.annot$percent_transcripts_not_hit[match(sgRNA,yusa.v1.crisprn.annot$CODE)],
+           fc_group = case_when(logfc < (-1.5) ~ "< -1.5",
+                                between(logfc, -1.5,-0.4999) ~ "[-1.5,-0.5)",
+                                between(logfc,-0.5,0.5) ~ "[-0.5,0.5]",
+                                logfc > 0.5 ~ "> 0.5"))
+  return(data)
+}
+
+# Prep data for GICC.
+prep_gicc <- function(data){
+  nc <- sum(grepl("HT29",colnames(data))) + 3
+  ret <- data.frame(id = c("plasmid",rep("control",nc-3)), 
+                    t(data[,3:nc]))
+  return(ret)
+}
+
+# function called by sliding window.
+gicc_perc_tx_hit <- function(data, num_samps, num_guides=1000){
+  ret <- NULL
+  if(num_guides > nrow(data)){
+    num <- nrow(data)
+  }else{
+    num <- num_guides
+  }
+  for(i in 1:num_samps){
+    # Sample guides.
+    td <- data %>%
+      sample_n(num) %>%
+      arrange(percent_transcripts_not_hit)
+    # Get sliding window indices.
+    sw_indices <- zoo::rollapply(1:nrow(td), min(c(nrow(td),200)), function(x) x, by = 10)
+    for(j in 1:nrow(sw_indices)){
+      tryCatch({
+        mpth <- 100 - median(td$percent_transcripts_not_hit[sw_indices[j,]], na.rm = T)
+        gd <- prep_gicc(td[sw_indices[j,],])
+        ret <- rbind(ret, data.frame(median_percent_tx_hit = mpth,
+                                     GICC = GICC(gd)$GICC$GICC.1))
+      },
+      error = function(e) print(e))
+    }
+  }
+  return(ret)
+}
+
+swin <- function(data, num_samps){
+  ret <- data %>%
+    prep_data_logfc() %>%
+    filter(!is.na(percent_transcripts_not_hit)) %>%
+    group_by(fc_group) %>%
+    do(data.frame(gicc_perc_tx_hit(., num_samps)))
+  return(ret)
+}
+
+c903.gicc_swin.txh <- swin(c903, num_samps = 50)
+
+ggplot(c903.gicc_swin.txh,aes(logFC,GICC,color=logFC)) +
+  geom_boxplot() +
+  geom_point() +
+  geom_hline(yintercept = 0.6, linetype="dashed") +
+  ggtitle("HT29 c903: GICC by logFC group")
 
 
 ```
